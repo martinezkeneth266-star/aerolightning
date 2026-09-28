@@ -3,78 +3,24 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>AeroLightning</title>
+<title>Prueba</title>
 </head>
 <body style="margin:0;padding:0;background:#000;touch-action:none;">
 <div style="width:100vw;height:100vh;"></div>
 <script>
-window.onerror = function(msg, url, line) {
+function hablar(t) {
   try {
-    const u = new SpeechSynthesisUtterance('Error detectado. ' + msg + '. Línea ' + line);
+    var u = new SpeechSynthesisUtterance(t);
     u.lang = 'es-ES';
     window.speechSynthesis.speak(u);
   } catch (e) {}
-};
-window.addEventListener('unhandledrejection', function(e) {
-  try {
-    const u = new SpeechSynthesisUtterance('Error de promesa. ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
-    u.lang = 'es-ES';
-    window.speechSynthesis.speak(u);
-  } catch (err) {}
+}
+window.addEventListener('DOMContentLoaded', function() {
+  hablar('Prueba uno. La página cargó correctamente.');
+  document.body.addEventListener('touchstart', function() {
+    hablar('Toque detectado.');
+  });
 });
-
-const SOUND_FILES = {
-  motorF35: 'sonidos/sonidode-f-35.mp3',
-  musicaFondo: 'sonidos/musicadepartida.mp3',
-  instrucciones: 'sonidos/instrucion.mp3',
-  despegue: 'sonidos/sonidodecasaenelaire.wav',
-  aterrizaje: 'sonidos/aterrizaje.mp3',
-  combateIniciado: 'sonidos/combateiniciado.mp3',
-  contactoRadar: 'sonidos/contactoderadar.mp3',
-  enemigoDetectado: 'sonidos/enemigodetectado.wav',
-  objetivoIdentificado: 'sonidos/objetivoidentificado.wav',
-  objetivoDestruido: 'sonidos/objetivodestruido-prepárateparalasiguientemision.wav',
-  enemigoDestruido: 'sonidos/enemigodestruido.wav',
-  misionCompletada: 'sonidos/victoriaconfirmada-hascompletadolamision.wav',
-  bloqueado: 'sonidos/big-alarm-2.mp3',
-  emergencia: 'sonidos/emergencia.wav',
-  disparoAmetralladora: 'sonidos/perestrelka.mp3',
-  disparoEnemigo: 'sonidos/Disparo.mp3',
-  recarga: 'sonidos/recargapistola.mp3',
-  sinMunicion: 'sonidos/nosalelabala.mp3',
-  misil: 'sonidos/misil.mp3',
-  bateriaAntiaerea: 'sonidos/bateriademisilesantiaereos.mp3',
-  torreta: 'sonidos/Torreta.mp3',
-  explosion: 'sonidos/explosion-1.mp3',
-  impacto: 'sonidos/tiro.mp3'
-};
-
-class AudioManager {
-  constructor() {
-    this.buffers = {}; this.loops = {}; this.queue = []; this.busy = false;
-    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-    this.master = this.ctx.createGain();
-    this.master.connect(this.ctx.destination);
-  }
-  async loadAll() {
-    await Promise.all(Object.entries(SOUND_FILES).map(async ([k, url]) => {
-      try {
-        const r = await fetch(encodeURI(url));
-        if (!r.ok) throw new Error('no encontrado');
-        this.buffers[k] = await this.ctx.decodeAudioData(await r.arrayBuffer());
-      } catch (e) { console.warn('No cargó: ' + k); }
-    }));
-  }
-  resume() { if (this.ctx.state === 'suspended') this.ctx.resume(); }
-  play(k, o = {}) {
-    const b = this.buffers[k];
-    if (!b) return null;
-    const s = this.ctx.createBufferSource();
-    s.buffer = b; s.loop = !!o.loop;
-    const g = this.ctx.createGain();
-    g.gain.value = o.volume === undefined ? 1 : o.volume;
-    const p = this.ctx.createStereoPanner();
-    p.pan.value = o.pan || 0;
-    s.connect(p).connect(g).connect(this.master);
-    s.start(0);
-    return { sour
+</script>
+</body>
+</html>
