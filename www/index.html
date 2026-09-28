@@ -3,27 +3,45 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Prueba</title>
+<title>Diagnóstico</title>
 </head>
 <body style="margin:0;padding:0;background:#000;touch-action:none;">
 <div style="width:100vw;height:100vh;"></div>
 <script>
-function vibrar(patron) {
+function vibrar(ms) {
   try {
     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Haptics) {
-      window.Capacitor.Plugins.Haptics.vibrate({ duration: patron });
+      window.Capacitor.Plugins.Haptics.vibrate({ duration: ms });
     } else if (navigator.vibrate) {
-      navigator.vibrate(patron);
+      navigator.vibrate(ms);
     }
   } catch (e) {}
 }
-window.addEventListener('DOMContentLoaded', function() {
-  vibrar(300);
-  setTimeout(function(){ vibrar(300); }, 600);
-  setTimeout(function(){ vibrar(300); }, 1200);
-  document.body.addEventListener('touchstart', function() {
-    vibrar(600);
-  });
+
+vibrar(150); // Punto 1: el script arrancó
+
+window.addEventListener('DOMContentLoaded', async function() {
+  vibrar(150); // Punto 2: la página terminó de cargar
+
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    vibrar(150); // Punto 3: se pudo crear el contexto de audio
+
+    const res = await fetch('sonidos/instrucion.mp3');
+    if (!res.ok) throw new Error('archivo no encontrado, status ' + res.status);
+    vibrar(150); // Punto 4: el archivo de audio se encontró
+
+    const arrayBuffer = await res.arrayBuffer();
+    await ctx.decodeAudioData(arrayBuffer);
+    vibrar(150); // Punto 5: el audio se pudo decodificar
+
+    // Si llegamos aquí, todo funciona. Vibración larga final de éxito:
+    setTimeout(function(){ vibrar(1000); }, 500);
+
+  } catch (e) {
+    // Vibración larga distinta para marcar ERROR:
+    vibrar(2000);
+  }
 });
 </script>
 </body>
