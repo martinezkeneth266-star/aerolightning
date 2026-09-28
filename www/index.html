@@ -8,6 +8,21 @@
 <body style="margin:0;padding:0;background:#000;touch-action:none;">
 <div style="width:100vw;height:100vh;"></div>
 <script>
+window.onerror = function(msg, url, line) {
+  try {
+    const u = new SpeechSynthesisUtterance('Error detectado. ' + msg + '. Línea ' + line);
+    u.lang = 'es-ES';
+    window.speechSynthesis.speak(u);
+  } catch (e) {}
+};
+window.addEventListener('unhandledrejection', function(e) {
+  try {
+    const u = new SpeechSynthesisUtterance('Error de promesa. ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
+    u.lang = 'es-ES';
+    window.speechSynthesis.speak(u);
+  } catch (err) {}
+});
+
 const SOUND_FILES = {
   motorF35: 'sonidos/sonidode-f-35.mp3',
   musicaFondo: 'sonidos/musicadepartida.mp3',
@@ -62,46 +77,4 @@ class AudioManager {
     p.pan.value = o.pan || 0;
     s.connect(p).connect(g).connect(this.master);
     s.start(0);
-    return { source: s, gain: g };
-  }
-  effect(k, volume = 1, pan = 0) { this.play(k, { volume, pan }); }
-  startEngine() { if (!this.loops.motor) this.loops.motor = this.play('motorF35', { volume: 0.7, loop: true }); }
-  stopEngine() { if (this.loops.motor) { try { this.loops.motor.source.stop(); } catch (e) {} delete this.loops.motor; } }
-  startMusic() { if (!this.loops.musica) this.loops.musica = this.play('musicaFondo', { volume: 0.06, loop: true }); }
-  announce(k) { this.queue.push(k); this.next(); }
-  next() {
-    if (this.busy || !this.queue.length) return;
-    this.busy = true;
-    const h = this.play(this.queue.shift());
-    const ms = h ? h.source.buffer.duration * 1000 : 0;
-    setTimeout(() => { this.busy = false; this.next(); }, ms);
-  }
-}
-
-class Haptics {
-  constructor() { this.h = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Haptics) || null; }
-  async ligera() { try { if (this.h) await this.h.impact({ style: 'LIGHT' }); } catch (e) {} }
-  async media() { try { if (this.h) await this.h.impact({ style: 'MEDIUM' }); } catch (e) {} }
-  async fuerte() { try { if (this.h) await this.h.impact({ style: 'HEAVY' }); } catch (e) {} }
-  async emergencia() {
-    try {
-      if (!this.h) return;
-      for (let i = 0; i < 3; i++) { await this.h.vibrate({ duration: 200 }); await new Promise(r => setTimeout(r, 150)); }
-    } catch (e) {}
-  }
-}
-
-class Targeting {
-  constructor(audio, haptics) {
-    this.audio = audio; this.haptics = haptics;
-    this.enemies = []; this.lockedId = null; this.timer = null; this.aligned = false;
-    this.TOL = 8;
-  }
-  add(e) {
-    this.enemies.push(e);
-    this.audio.announce('enemigoDetectado');
-    if (this.lockedId === null) this.choose();
-  }
-  remove(id) {
-    this.enemies = this.enemies.filter(e => e.id !== id);
-    if (this.lockedId
+    return { sour
