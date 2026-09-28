@@ -11,7 +11,7 @@
 const SOUND_FILES = {
   motorF35: 'sonidos/sonidode-f-35.mp3',
   musicaFondo: 'sonidos/musicadepartida.mp3',
-  instrucciones: 'sonidos/instrucciones.mp3',
+  instrucciones: 'sonidos/instrucion.mp3',
   despegue: 'sonidos/sonidodecasaenelaire.wav',
   aterrizaje: 'sonidos/aterrizaje.mp3',
   combateIniciado: 'sonidos/combateiniciado.mp3',
@@ -31,15 +31,12 @@ const SOUND_FILES = {
   bateriaAntiaerea: 'sonidos/bateriademisilesantiaereos.mp3',
   torreta: 'sonidos/Torreta.mp3',
   explosion: 'sonidos/explosion-1.mp3',
-  tiro: 'sonidos/tiro.mp3'
+  impacto: 'sonidos/tiro.mp3'
 };
 
 class AudioManager {
   constructor() {
-    this.buffers = {};
-    this.loops = {};
-    this.queue = [];
-    this.busy = false;
+    this.buffers = {}; this.loops = {}; this.queue = []; this.busy = false;
     this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     this.master = this.ctx.createGain();
     this.master.connect(this.ctx.destination);
@@ -58,8 +55,7 @@ class AudioManager {
     const b = this.buffers[k];
     if (!b) return null;
     const s = this.ctx.createBufferSource();
-    s.buffer = b;
-    s.loop = !!o.loop;
+    s.buffer = b; s.loop = !!o.loop;
     const g = this.ctx.createGain();
     g.gain.value = o.volume === undefined ? 1 : o.volume;
     const p = this.ctx.createStereoPanner();
@@ -108,240 +104,4 @@ class Targeting {
   }
   remove(id) {
     this.enemies = this.enemies.filter(e => e.id !== id);
-    if (this.lockedId === id) { this.lockedId = null; this.choose(); }
-  }
-  choose() {
-    if (!this.enemies.length) { this.lockedId = null; this.stopPulse(); return; }
-    const o = [...this.enemies].sort((a, b) => b.peligro - a.peligro || a.distancia - b.distancia);
-    this.lockedId = o[0].id;
-    this.audio.announce('objetivoIdentificado');
-    this.startPulse();
-  }
-  cycle() {
-    if (this.enemies.length < 2) return;
-    const i = this.enemies.findIndex(e => e.id === this.lockedId);
-    this.lockedId = this.enemies[(i + 1) % this.enemies.length].id;
-    this.haptics.media();
-    this.audio.announce('objetivoIdentificado');
-  }
-  current() { return this.enemies.find(e => e.id === this.lockedId) || null; }
-  isAligned() { const t = this.current(); return !!t && Math.abs(t.angulo) <= this.TOL; }
-  startPulse() {
-    this.stopPulse();
-    const tick = () => {
-      const t = this.current();
-      if (!t) return;
-      const pan = Math.max(-1, Math.min(1, t.angulo / 90));
-      const vol = Math.max(0.3, 1 - t.distancia / 500);
-      this.audio.effect('contactoRadar', vol, pan);
-      const al = Math.abs(t.angulo) <= this.TOL;
-      if (al && !this.aligned) { this.audio.announce('objetivoIdentificado'); this.haptics.ligera(); }
-      this.aligned = al;
-      const f = Math.min(t.distancia / 500, 1);
-      this.timer = setTimeout(tick, 150 + f * 1050);
-    };
-    tick();
-  }
-  stopPulse() { if (this.timer) { clearTimeout(this.timer); this.timer = null; } }
-}
-
-window.addEventListener('DOMContentLoaded', async () => {
-  const audio = new AudioManager();
-  const haptics = new Haptics();
-  const targeting = new Targeting(audio, haptics);
-  const avion = { heading: 0, altitud: 50, velocidad: 1, municion: 20, vida: 100 };
-  let estado = 'cargando';
-  let nextId = 1;
-  let bajas = 0;
-  let introHandle = null;
-
-  function refrescarAngulos() {
-    targeting.enemies.forEach(e => { e.angulo = e.rumbo - avion.heading; });
-  }
-  function enCombate() { return estado === 'combate'; }
-
-  function destruir(id) {
-    audio.effect('explosion');
-    audio.announce('enemigoDestruido');
-    haptics.media();
-    targeting.remove(id);
-    bajas++;
-    if (bajas >= 5) victoria();
-  }
-  function victoria() {
-    estado = 'victoria';
-    targeting.stopPulse();
-    audio.announce('objetivoDestruido');
-    audio.announce('misionCompletada');
-    setTimeout(() => audio.stopEngine(), 6000);
-    setTimeout(() => { estado = 'reiniciar'; }, 6000);
-  }
-  function derrota() {
-    estado = 'derrota';
-    targeting.stopPulse();
-    audio.stopEngine();
-    audio.announce('emergencia');
-    haptics.emergencia();
-    setTimeout(() => { estado = 'reiniciar'; }, 4000);
-  }
-
-  const acciones = {
-    ascender() { if (enCombate()) avion.altitud = Math.min(avion.altitud + 10, 100); },
-    descender() {
-      if (!enCombate()) return;
-      avion.altitud = Math.max(avion.altitud - 10, 0);
-      if (avion.altitud === 0) {
-        estado = 'aterrizado';
-        targeting.stopPulse();
-        audio.stopEngine();
-        audio.announce('aterrizaje');
-      }
-    },
-    girar(dir) {
-      if (!enCombate()) return;
-      avion.heading = Math.max(-90, Math.min(90, avion.heading + (dir === 'derecha' ? 15 : -15)));
-      refrescarAngulos();
-    },
-    acelerar() { if (enCombate()) avion.velocidad = Math.min(avion.velocidad + 0.5, 3); },
-    frenar() { if (enCombate()) avion.velocidad = Math.max(avion.velocidad - 0.5, 0.5); },
-    disparar() {
-      if (!enCombate()) return;
-      if (avion.municion <= 0) { audio.effect('sinMunicion'); return; }
-      avion.municion--;
-      audio.effect('disparoAmetralladora');
-      haptics.ligera();
-      if (targeting.isAligned()) destruir(targeting.lockedId);
-    },
-    misil() {
-      if (!enCombate()) return;
-      audio.effect('misil');
-      haptics.media();
-      if (targeting.lockedId !== null && targeting.isAligned()) destruir(targeting.lockedId);
-    },
-    recargar() { if (enCombate()) { avion.municion = 20; audio.effect('recarga'); } },
-    cambiarObjetivo() { if (enCombate()) targeting.cycle(); }
-  };
-
-  class Gestos {
-    constructor(el) {
-      this.sx = 0; this.sy = 0; this.lx = 0; this.ly = 0;
-      this.max = 1; this.lastTap = 0; this.lp = null; this.lpDone = false;
-      el.addEventListener('touchstart', e => this.start(e), { passive: true });
-      el.addEventListener('touchmove', e => this.move(e), { passive: true });
-      el.addEventListener('touchend', e => this.end(e), { passive: true });
-    }
-    start(e) {
-      audio.resume();
-      if (e.touches.length === 1) {
-        this.sx = this.lx = e.touches[0].clientX;
-        this.sy = this.ly = e.touches[0].clientY;
-        this.max = 1; this.lpDone = false;
-        this.lp = setTimeout(() => { this.lpDone = true; acciones.recargar(); }, 500);
-      } else {
-        this.max = Math.max(this.max, e.touches.length);
-        clearTimeout(this.lp);
-      }
-      if (estado === 'esperando') iniciarMision();
-      if (estado === 'reiniciar') location.reload();
-    }
-    move(e) {
-      this.lx = e.touches[0].clientX; this.ly = e.touches[0].clientY;
-      if (Math.abs(this.lx - this.sx) > 15 || Math.abs(this.ly - this.sy) > 15) clearTimeout(this.lp);
-    }
-    end(e) {
-      if (e.touches.length > 0) return;
-      clearTimeout(this.lp);
-      if (this.lpDone) return;
-      const dx = this.lx - this.sx, dy = this.ly - this.sy;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < 40) {
-        if (this.max >= 2) { acciones.cambiarObjetivo(); return; }
-        this.tap();
-        return;
-      }
-      if (this.max >= 2) { if (dy < 0) acciones.acelerar(); else acciones.frenar(); return; }
-      if (Math.abs(dx) > Math.abs(dy)) acciones.girar(dx > 0 ? 'derecha' : 'izquierda');
-      else if (dy < 0) acciones.ascender(); else acciones.descender();
-    }
-    tap() {
-      const now = Date.now();
-      if (now - this.lastTap < 300) { this.lastTap = 0; acciones.misil(); return; }
-      this.lastTap = now;
-      setTimeout(() => { if (this.lastTap && Date.now() - this.lastTap >= 300) { this.lastTap = 0; acciones.disparar(); } }, 320);
-    }
-  }
-
-  function iniciarMision() {
-    estado = 'despegando';
-    if (introHandle) { try { introHandle.source.stop(); } catch (e) {} }
-    audio.announce('despegue');
-    audio.startEngine();
-    audio.startMusic();
-    setTimeout(() => {
-      estado = 'combate';
-      audio.announce('combateIniciado');
-      oleadas();
-    }, 3000);
-  }
-
-  function oleadas() {
-    setInterval(() => {
-      if (!enCombate() || targeting.enemies.length >= 3) return;
-      const e = {
-        id: nextId++,
-        rumbo: Math.floor(Math.random() * 181) - 90,
-        angulo: 0,
-        distancia: 400 + Math.random() * 100,
-        peligro: Math.random() > 0.7 ? 2 : 1,
-        avisado: false
-      };
-      e.angulo = e.rumbo - avion.heading;
-      targeting.add(e);
-    }, 6000);
-
-    setInterval(() => {
-      if (!enCombate()) return;
-      targeting.enemies.slice().forEach(e => {
-        e.distancia = Math.max(0, e.distancia - 15 * avion.velocidad);
-        if (e.distancia < 150 && !e.avisado) {
-          e.avisado = true;
-          audio.announce('bloqueado');
-          haptics.fuerte();
-        }
-        if (e.distancia < 150 && e.distancia > 0) {
-          audio.effect('disparoEnemigo', 0.8, Math.max(-1, Math.min(1, e.angulo / 90)));
-          avion.vida = Math.max(0, avion.vida - 5);
-          haptics.ligera();
-        }
-        if (e.distancia <= 0) {
-          avion.vida = Math.max(0, avion.vida - 20);
-          audio.effect('explosion');
-          audio.announce('emergencia');
-          haptics.fuerte();
-          targeting.remove(e.id);
-        }
-      });
-      if (avion.vida <= 0 && enCombate()) derrota();
-    }, 1000);
-
-    setInterval(() => {
-      if (!enCombate()) return;
-      const pan = Math.random() * 2 - 1;
-      audio.effect(Math.random() > 0.5 ? 'torreta' : 'bateriaAntiaerea', 0.8, pan);
-      if (Math.random() < 0.3) {
-        avion.vida = Math.max(0, avion.vida - 5);
-        haptics.media();
-        audio.announce('emergencia');
-        if (avion.vida <= 0) derrota();
-      }
-    }, 20000);
-  }
-
-  await audio.loadAll();
-  new Gestos(document.body);
-  introHandle = audio.play('instrucciones');
-  estado = 'esperando';
-});
-</script>
-</body>
-</html>
+    if (this.lockedId
