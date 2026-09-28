@@ -8,17 +8,21 @@
 <body style="margin:0;padding:0;background:#000;touch-action:none;">
 <div style="width:100vw;height:100vh;"></div>
 <script>
-function hablar(t) {
+function vibrar(patron) {
   try {
-    var u = new SpeechSynthesisUtterance(t);
-    u.lang = 'es-ES';
-    window.speechSynthesis.speak(u);
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Haptics) {
+      window.Capacitor.Plugins.Haptics.vibrate({ duration: patron });
+    } else if (navigator.vibrate) {
+      navigator.vibrate(patron);
+    }
   } catch (e) {}
 }
 window.addEventListener('DOMContentLoaded', function() {
-  hablar('Prueba uno. La página cargó correctamente.');
+  vibrar(300);
+  setTimeout(function(){ vibrar(300); }, 600);
+  setTimeout(function(){ vibrar(300); }, 1200);
   document.body.addEventListener('touchstart', function() {
-    hablar('Toque detectado.');
+    vibrar(600);
   });
 });
 </script>
