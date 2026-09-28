@@ -1,0 +1,13 @@
+{
+  "name": "aerolightning",
+  "version": "1.0.0",
+  "description": "AeroLightning - Juego de combate aéreo accesible basado en el F-35",
+  "dependencies": {
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/haptics": "^6.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.0.0"
+  }
+}
