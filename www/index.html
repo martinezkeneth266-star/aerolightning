@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>AeroLightning</title>
+</head>
+<body style="margin:0;padding:0;background:#000;touch-action:none;">
+<div style="width:100vw;height:100vh;"></div>
+<script>
+function vibrar(ms) {
+  try {
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Haptics) {
+      window.Capacitor.Plugins.Haptics.vibrate({ duration: ms });
+    } else if (navigator.vibrate) {
+      navigator.vibrate(ms);
+    }
+  } catch (e) {}
+}
+
+const SOUND_FILES = {
+  motorF35: 'sonidos/sonidode-f-35.mp3',
+  musicaFondo: 'sonidos/Batalla_Aeronaval.mp3',
+  ambienteAeropuerto: 'sonidos/aeroport.mp3',
+  instrucciones: 'sonidos/vozinstrucciones.mp3',
+  despegue: 'sonidos/sonidodecasaenelaire.wav',
+  aterrizaje: 'sonidos/aterrizaje.mp3',
+  combateIniciado: 'sonidos/combateiniciado.mp3',
+  contactoRadar: 'sonidos/contactoderadar.mp3',
+  enemigoDetectado: 'sonidos/enemigodetectado.wav',
+  objetivoIdentificado: 'sonidos/objetivoidentificado.wav',
+  objetivoDestruido: 'sonidos/objetivodestruido-prepárateparalasiguientemision.wav',
+  enemigoDestruido: 'sonidos/enemigosdestruido.wav',
+  misionCompletada: 'sonidos/victoriaconfirmada-hascompletadolamision.wav',
+  bloqueado: 'sonidos/big-alarm-2.mp3',
+  emergencia: 'sonidos/emergencia.wav',
+  disparoAmetralladora: 'sonidos/perestrelka.mp3',
+  disparoEnemigo: 'sonidos/Disparo.mp3',
+  recarga: 'sonidos/recargapistola.mp3',
+  sinMunicion: 'sonidos/nosalelabala.mp3',
+  misil: 'sonidos/misil.mp3',
+  bateriaAntiaerea: 'sonidos/bateriademisilesantiaereos.mp3',
+  torreta: 'sonidos/Torreta.mp3',
+  explosion: 'sonidos/explosión-1.mp3',
+  impacto: 'sonidos/tiro.mp3'
+};
+
+class AudioManager {
+  constructor() {
+    this.buffers = {}; this.loops = {}; this.queue = []; this.busy = false;
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    this.master = this.ctx.createGain();
+    this.master.connect(this.ctx.destination);
+    this.sfxBus = this.ctx.createGain();
+    this.sfxBus.connect(this.master);
+    this.voiceBus = this.ctx.createGain();
+    this.voiceBus.gain.value = 1.4;
+    this.voiceBus.connect(this.master);
+  }
+  async loadAll() {
+    await Promise.all(Object.entries(SOUND_FILES).map(async ([k, url]) => {
+      try {
+        const r = await fetch(encodeURI(url));
+        if (!r.ok) throw new Error('no encontrado');
+        this.buffers[k] = await this.ctx.decodeAudioData(await r.arrayBuffer());
+      } catch (e) { console.warn('No cargó: ' + k); }
+    }));
+  }
+  resume() { if (this.ctx.state === 'suspended') this.ctx.resume(); }
+  play(k, o = {}) {
+    const b = this.buffers[k];
+    if (!b) return null;
+    const s = this.ctx.createBufferSource();
+    s.buffer = b; s.loop = !!o.loop;
+    const g = this.ctx.createGain();
+    g.gain.value = o.volume === undefined ? 1 : o.volume;
+    const p = this.ctx.createStereoPanner();
+    p.pan.value = o.pan || 0;
+    const bus = o.bus === 'voice' ? this.voiceBus : this.sfxBus;
+    s.connect(p).connect(g).connect(bus);
+    s.start(0);
+    return { source: s, gain: g };
+  }
+  effect(k, volume = 1, pan = 0) { this.play(k, { volume, pan, bus: 'sfx' }); }
+  startEngine() { if (!this.loops.motor) this.loops.motor = this.play('motorF35', { volume: 0.7, loop: true, bus: 'sfx' }); }
+  stopEngine() { if (this.loops.motor) { try { this.loops.motor.source.stop(); } catch (e) {} delete this.loops.motor; } }
+  startMusic() { if (!this.loops.musica) this.loops.musica = this.play('musicaFondo', { volume: 0.06, loop: true, bus: 'sfx' }); }
+  startAeropuerto() { if (!this.loops.aeropuerto) this.loops.aeropuerto = this.play('ambienteAeropuerto', { volume: 0.5, loop: true, bus: 'sfx' }); }
+  stopAeropuerto() { if (this.loops.aeropuerto) { try { this.loops.aeropuerto.source.stop(); } catch (e) {} delete this.loops.aeropuerto; } }
+  announce(k) { this.queue.push(k); this.next(); }
+  next() {
+    if (this.busy || !this.queue.length) return;
+    this.busy = true;
+    const now = this.ctx.currentTime;
+    this.sfxBus.gain.cancelScheduledValues(now);
+    this.sfxBus.gain.setValueAtTime(this.sfxBus.gain.value, now);
+    this.sfxBus.gain.linearRampToValueAtTime(0.22, now + 0.15);
+    const h = this.play(this.queue.shift(), { bus: 'voice' });
+    const ms = h ? h.source.buffer.duration * 1000 : 300;
+    setTimeout(() => {
+      const now2 = this.ctx.currentTime;
+      this.sfxBus.gain.cancelScheduledValues(now2);
+      this.sfxBus.gain.setValueAtTime(this.sfxBus.gain.value, now2);
+      this.sfxBus.gain.linearRampToValueAtTime(1, now2 + 0.3);
+      this.busy = false;
+      this.next();
+    }, ms);
+  }
+}
+
+class Haptics {
+  constructor() { this.h = (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Haptics) || null; }
+  async ligera() { try { if (this.h) await this.h.impact({ style: 'LIGHT' }); } catch (e) {} }
+  async media() { try { if (this.h) await this.h.impact({ style: 'MEDIUM' }); } catch (e) {} }
+  async fuerte() { try { if (this.h) await this.h.impact({ style: 'HEAVY' }); } catch (e) {} }
+  async emergencia() {
+    try {
+      if (!this.h) return;
+      for (let i = 0; i < 3; i++) { await this.h.vibrate({ duration: 200 }); await new Promise(r => setTimeout(r, 150)); }
+    } catch (e) {}
+  }
+}
+
+class Targeting {
+  constructor(audio, haptics) {
+    this.audio = audio; this.haptics = haptics;
+    this.enemies = []; this.lockedId = null; this.timer = null; this.aligned = false;
+    this.TOL = 8;
+  }
+  add(e) {
+    this.enemies.push(e);
+    this.audio.announce('enemigoDetectado');
+    if (this.lockedId === null) this.choose();
+  }
+  remove(id) {
+    this.enemies = this.enemies.filter(e => e.id !== id);
+    if (this.lockedId === id) { this.lockedId = null; this.choose(); }
+  }
+  choose() {
+    if (!this.enemies.length) { this.lockedId = null; this.stopPulse(); return; }
+    const o = [...this.enemies].sort((a, b) => b.peligro - a.peligro || a.distancia - b.distancia);
+    this.lockedId = o[0].id;
+    this.audio.announce('objetivoIdentificado');
+    this.startPulse();
+  }
+  cycle() {
+    if (this.enemies.length < 2) return;
+    const i = this.enemies.findIndex(e => e.id === this.lockedId);
+    this.lockedId = this.enemies[(i + 1) % this.enemies.length].id;
+    this.haptics.media();
+    this.audio.announce('objetivoIdentificado');
+  }
+  current() { return this.enemies.find(e => e.id === this.lockedId) || null; }
+  isAligned() { const t = this.current(); return !!t && Math.abs(t.angulo) <= this.TOL; }
+  startPulse() {
+    this.stopPulse();
+    const tick = () => {
+      const t = this.current();
+      if (!t) return;
+      const pan = Math.max(-1, Math.min(1, t.angulo / 90));
+      const vol = Math.max(0.3, 1 - t.distancia / 500);
+      this.audio.effect('contactoRadar', vol, pan);
+      const al = Math.abs(t.angulo) <= this.TOL;
+      if (al && !this.aligned) { this.audio.announce('objetivoIdentificado'); this.haptics.ligera(); }
+      this.aligned = al;
+      const f = Math.min(t.distancia / 500, 1);
+      this.timer = setTimeout(tick, 150 + f * 1050);
+    };
+    tick();
+  }
+  stopPulse() { if (this.timer) { clearTimeout(this.timer); this.timer = null; } }
+}
+
+window.addEventListener('DOMContentLoaded', async () => {
+  vibrar(150);
+  try {
+    const audio = new AudioManager();
+    const haptics = new Haptics();
+    const targeting = new Targeting(audio, haptics);
+    const avion = {
+      heading: 0, altitud: 50, velocidad: 1,
+      municion: 20, recargando: false,
+      misiles: 4,
+      canon: 6,
+      vida: 100,
+      ultimaManiobra: 0
+    };
+    let estado = 'cargando';
+    let nextId = 1;
+    let bajas = 0;
+    let oleada = 1;
+    let introHandle = null;
+    const record = parseInt(localStorage.getItem('aerolightning_record') || '0', 10);
+
+    function refrescarAngulos() { targeting.enemies.forEach(e => { e.angulo = e.rumbo - avion.heading; }); }
+    function enCombate() { return estado === 'combate'; }
+    function registrarManiobra() { avion.ultimaManiobra = Date.now(); }
+    function maniobroReciente() { return (Date.now() - avion.ultimaManiobra) < 900; }
+
+    function impactar(id, dano) {
+      const e = targeting.enemies.find(x => x.id === id);
+      if (!e) return;
+      e.resistencia -= dano;
+      if (e.resistencia > 0) {
+        audio.effect('impacto', 0.7, Math.max(-1, Math.min(1, e.angulo / 90)));
+      } else {
+        audio.effect('explosion');
+        audio.announce('enemigoDestruido');
+        haptics.media();
+        targeting.remove(id);
+        bajas++;
+        oleada = 1 + Math.floor(bajas / 3);
+        if (bajas >= 8) victoria();
+      }
+    }
+
+    function terminarMision(gano) {
+      targeting.stopPulse();
+      audio.stopEngine();
+      if (bajas > record) localStorage.setItem('aerolightning_record', String(bajas));
+      const esperarFinDeAnuncios = () => {
+        if (audio.busy || audio.queue.length) { setTimeout(esperarFinDeAnuncios, 300); return; }
+        vibrar(gano ? 1500 : 800);
+        setTimeout(() => { estado = 'reiniciar'; }, 1200);
+      };
+      esperarFinDeAnuncios();
+    }
+
+    function victoria() {
+      estado = 'victoria';
+      audio.announce('objetivoDestruido');
+      audio.announce('misionCompletada');
+      terminarMision(true);
+    }
+    function derrota() {
+      estado = 'derrota';
+      audio.announce('emergencia');
+      haptics.emergencia();
+      terminarMision(false);
+    }
+
+    const acciones = {
+      ascender() { if (enCombate()) { avion.altitud = Math.min(avion.altitud + 10, 100); registrarManiobra(); } },
+      descender() {
+        if (!enCombate()) return;
+        avion.altitud = Math.max(avion.altitud - 10, 0);
+        registrarManiobra();
+        if (avion.altitud === 0) {
+          estado = 'aterrizado';
+          targeting.stopPulse();
+          audio.stopEngine();
+          audio.announce('aterrizaje');
+        }
+      },
+      girar(dir) {
+        if (!enCombate()) return;
+        avion.heading = Math.max(-90, Math.min(90, avion.heading + (dir === 'derecha' ? 15 : -15)));
+        refrescarAngulos();
+        registrarManiobra();
+      },
+      acelerar() { if (enCombate()) { avion.velocidad = Math.min(avion.velocidad + 0.5, 3); registrarManiobra(); } },
+      frenar() { if (enCombate()) { avion.velocidad = Math.max(avion.velocidad - 0.5, 0.5); registrarManiobra(); } },
+      disparar() {
+        if (!enCombate() || avion.recargando) return;
+        if (avion.municion <= 0) { audio.effect('sinMunicion'); return; }
+        avion.municion--;
+        audio.effect('disparoAmetralladora');
+        haptics.ligera();
+        if (targeting.isAligned()) impactar(targeting.lockedId, 1);
+      },
+      misil() {
+        if (!enCombate()) return;
+        if (avion.misiles <= 0) { audio.effect('sinMunicion'); return; }
+        avion.misiles--;
+        audio.effect('misil');
+        haptics.media();
+        if (targeting.lockedId !== null && targeting.isAligned()) impactar(targeting.lockedId, 99);
+      },
+      canon() {
+        if (!enCombate()) return;
+        if (avion.canon <= 0) { audio.effect('sinMunicion'); return; }
+        avion.canon--;
+        audio.effect('impacto', 1);
+        haptics.fuerte();
+        if (targeting.lockedId !== null) impactar(targeting.lockedId, 3);
+      },
+      recargar() {
+        if (!enCombate() || avion.recargando) return;
+        avion.recargando = true;
+        audio.effect('recarga');
+        setTimeout(() => { avion.municion = 20; avion.recargando = false; }, 900);
+      },
+      cambiarObjetivo() { if (enCombate()) targeting.cycle(); }
+    };
+
+    class Gestos {
+      constructor(el) {
+        this.sx = 0; this.sy = 0; this.lx = 0; this.ly = 0;
+        this.max = 1; this.lastTap = 0; this.lp = null; this.lpDone = false;
+        el.addEventListener('touchstart', e => this.start(e), { passive: true });
+        el.addEventListener('touchmove', e => this.move(e), { passive: true });
+        el.addEventListener('touchend', e => this.end(e), { passive: true });
+      }
+      start(e) {
+        audio.resume();
+        if (e.touches.length === 1) {
+          this.sx = this.lx = e.touches[0].clientX;
+          this.sy = this.ly = e.touches[0].clientY;
+          this.max = 1; this.lpDone = false;
+          this.lp = setTimeout(() => { this.lpDone = true; acciones.recargar(); }, 500);
+        } else { this.max = Math.max(this.max, e.touches.length); clearTimeout(this.lp); }
+        if (estado === 'esperando') iniciarMision();
+        if (estado === 'reiniciar') location.reload();
+      }
+      move(e) {
+        this.lx = e.touches[0].clientX; this.ly = e.touches[0].clientY;
+        if (Math.abs(this.lx - this.sx) > 15 || Math.abs(this.ly - this.sy) > 15) clearTimeout(this.lp);
+      }
+      end(e) {
+        if (e.touches.length > 0) return;
+        clearTimeout(this.lp);
+        if (this.lpDone) return;
+        const dx = this.lx - this.sx, dy = this.ly - this.sy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 40) {
+          if (this.max >= 3) { acciones.canon(); return; }
+          if (this.max === 2) { acciones.cambiarObjetivo(); return; }
+          this.tap();
+          return;
+        }
+        if (this.max >= 2) { if (dy < 0) acciones.acelerar(); else acciones.frenar(); return; }
+        if (Math.abs(dx) > Math.abs(dy)) acciones.girar(dx > 0 ? 'derecha' : 'izquierda');
+        else if (dy < 0) acciones.ascender(); else acciones.descender();
+      }
+      tap() {
+        const now = Date.now();
+        if (now - this.lastTap < 300) { this.lastTap = 0; acciones.misil(); return; }
+        this.lastTap = now;
+        setTimeout(() => { if (this.lastTap && Date.now() - this.lastTap >= 300) { this.lastTap = 0; acciones.disparar(); } }, 320);
+      }
+    }
+
+    function iniciarMision() {
+      estado = 'despegando';
+      audio.stopAeropuerto();
+      if (introHandle) { try { introHandle.source.stop(); } catch (e) {} }
+      audio.announce('despegue');
+      audio.startEngine();
+      audio.startMusic();
+      setTimeout(() => { estado = 'combate'; audio.announce('combateIniciado'); oleadas(); }, 3000);
+    }
+
+    function crearEnemigo() {
+      const esBombardero = Math.random() < 0.35;
+      const rumbo = Math.floor(Math.random() * 181) - 90;
+      const e = {
+        id: nextId++, rumbo, angulo: rumbo - avion.heading,
+        distancia: 380 + Math.random() * 100,
+        tipo: esBombardero ? 'bombardero' : 'caza',
+        resistencia: esBombardero ? 4 : 2,
+        peligro: esBombardero ? 2 : 1,
+        avisado: false
+      };
+      targeting.add(e);
+    }
+
+    function oleadas() {
+      setInterval(() => {
+        if (!enCombate()) return;
+        const maxActivos = Math.min(3 + Math.floor(oleada / 2), 6);
+        if (targeting.enemies.length >= maxActivos) return;
+        crearEnemigo();
+      }, Math.max(2500, 6000 - oleada * 400));
+
+      setInterval(() => {
+        if (!enCombate()) return;
+        const velocidadOleada = 1 + oleada * 0.15;
+        targeting.enemies.slice().forEach(e => {
+          e.distancia = Math.max(0, e.distancia - 15 * avion.velocidad * velocidadOleada);
+          if (e.distancia < 150 && !e.avisado) { e.avisado = true; audio.announce('bloqueado'); haptics.fuerte(); }
+          if (e.distancia < 150 && e.distancia > 0) {
+            const esquivado = maniobroReciente() && Math.random() < 0.6;
+            if (!esquivado) {
+              audio.effect('disparoEnemigo', 0.8, Math.max(-1, Math.min(1, e.angulo / 90)));
+              avion.vida = Math.max(0, avion.vida - (4 + oleada));
+              haptics.ligera();
+            }
+          }
+          if (e.distancia <= 0) {
+            avion.vida = Math.max(0, avion.vida - (15 + oleada * 2));
+            audio.effect('explosion'); audio.announce('emergencia'); haptics.fuerte();
+            targeting.remove(e.id);
+          }
+        });
+        if (avion.vida <= 0 && enCombate()) derrota();
+      }, 1000);
+
+      setInterval(() => {
+        if (!enCombate()) return;
+        const pan = Math.random() * 2 - 1;
+        audio.effect(Math.random() > 0.5 ? 'torreta' : 'bateriaAntiaerea', 0.8, pan);
+        const prob = Math.min(0.25 + oleada * 0.03, 0.6);
+        if (Math.random() < prob) {
+          const esquivado = maniobroReciente() && Math.random() < 0.5;
+          if (!esquivado) {
+            avion.vida = Math.max(0, avion.vida - (5 + oleada));
+            haptics.media(); audio.announce('emergencia');
+            if (avion.vida <= 0) derrota();
+          }
+        }
+      }, Math.max(9000, 18000 - oleada * 1000));
+    }
+
+    await audio.loadAll();
+    vibrar(150);
+    new Gestos(document.body);
+    introHandle = audio.play('instrucciones', { bus: 'voice' });
+    estado = 'esperando';
+    vibrar(400);
+    const introDur = (introHandle && introHandle.source.buffer) ? introHandle.source.buffer.duration * 1000 : 0;
+    setTimeout(() => { if (estado === 'esperando') audio.startAeropuerto(); }, introDur);
+  } catch (e) {
+    vibrar(3000);
+  }
+});
+</script>
+</body>
+</html>
